@@ -14,6 +14,8 @@
 
 #include "logger.h"
 
+#include "config.h"
+
 #include <QDir>
 #include <QStringList>
 #include <QThread>
@@ -97,10 +99,15 @@ void Logger::log(Log log)
  */
 bool Logger::isNoop() const
 {
-    QMutexLocker lock(const_cast<QMutex *>(&_mutex));
+    QMutexLocker lock(&_mutex);
     return !_logstream && !_logWindowActivated;
 }
 
+bool Logger::isLoggingToFile() const
+{
+    QMutexLocker lock(&_mutex);
+    return _logstream;
+}
 
 void Logger::doLog(const QString &msg)
 {
@@ -181,6 +188,35 @@ void Logger::setLogDebug(bool debug)
 {
     QLoggingCategory::setFilterRules(debug ? QStringLiteral("sync.*.debug=true\ngui.*.debug=true") : QString());
     _logDebug = debug;
+}
+
+QString Logger::temporaryFolderLogDirPath() const
+{
+    QString dirName = APPLICATION_SHORTNAME + QString("-logdir");
+    return QDir::temp().filePath(dirName);
+}
+
+void Logger::setupTemporaryFolderLogDir()
+{
+    auto dir = temporaryFolderLogDirPath();
+    if (!QDir().mkpath(dir))
+        return;
+    setLogDebug(true);
+    setLogExpire(4 /*hours*/);
+    setLogDir(dir);
+    _temporaryFolderLogDir = true;
+}
+
+void Logger::disableTemporaryFolderLogDir()
+{
+    if (!_temporaryFolderLogDir)
+        return;
+
+    enterNextLogFile();
+    setLogDir(QString());
+    setLogDebug(false);
+    setLogFile(QString());
+    _temporaryFolderLogDir = false;
 }
 
 static bool compressLog(const QString &originalName, const QString &targetName)
